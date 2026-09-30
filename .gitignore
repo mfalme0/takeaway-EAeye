@@ -4,3 +4,6 @@
 *.pdb
 *.ilk
 *.idb
+
+# Personal study notes, not part of the submission
+CRASH_COURSE.md
