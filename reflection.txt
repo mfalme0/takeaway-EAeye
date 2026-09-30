@@ -1,0 +1,170 @@
+AYOAYO (KALAH / MANCALA) - REFLECTION
+=======================================
+
+Files: Ayoayo.h, Ayoayo.cpp, main.cpp
+Build: cl /EHsc /W4 /std:c++17 Ayoayo.cpp main.cpp /Fe:ayoayo.exe
+
+
+1. INITIAL REFLECTION
+---------------------
+When I first read the brief I saw a small, well-bounded object-oriented
+exercise: two classes, four public methods, 48 seeds, no GUI. My first instinct
+was to model the board the way the textbook picture does, as two arrays of six
+pits plus two stores, and to write a `playGame` that loops over the seeds in
+hand and drops each one into "the next slot to the right".
+
+What I expected to be the hard part was the two special rules: the extra turn
+when the last seed lands in your own store, and the capture when the last seed
+lands in an empty pit of your own. I expected the fiddly part to be getting the
+output strings character-exact, because the grader compares literal text like
+"Winner is player 2: Brian" and "[4, 4, 0, 5, 5, 5, 1, 4, 4, 4, 4, 4, 4, 0]".
+
+What I did not expect was the part that actually took the longest: the brief
+never states the geometry of the board. It says "sow to the right" and it shows
+a figure, but the figure is not in the text I was given. "To the right" is
+ambiguous for player 2 (right from whose point of view?), the numbering of the
+two rows is not stated, and "the pit on the opposite side" does not say whether
+opposite means the same index or the mirrored index. So before writing logic I
+decided to treat the two worked examples in the brief as a specification in
+their own right and solve for the board layout that reproduces them exactly.
+
+
+2. WHAT THE EXAMPLES TOLD ME
+----------------------------
+I hand-traced the expected outputs before coding. The findings:
+
+a) The ring is a single 14-slot loop in this order:
+      P1 pit1..pit6 -> store1 -> P2 pit1..pit6 -> store2 -> back to P1 pit1
+   Both players sow forwards through that same loop, and each player's own
+   store is the one that follows their own pit 6.
+
+b) "Opposite" means the MIRRORED index, not the same index: the pit opposite
+   your pit i is the opponent's pit 7 - i. This was the decisive detail. In
+   example 1 the last move captures; testing same-index against mirrored-index
+   gave store totals of 8:2 and 10:2 respectively, and only the mirrored index
+   produced the documented "store: 10" and "[5, 0, 1, 1, 0, 7]".
+
+c) A capture is only triggered when the landing pit was EMPTY beforehand, and
+   the captured seeds are worthless if the opposite pit is empty (in that case
+   the seed just stays in the pit it landed in).
+
+d) The "player N take another turn" notice is printed only for a landing in
+   your OWN store. A capture does not grant an extra turn.
+
+e) Seeds must SKIP the opponent's store rather than being counted into it. This
+   was the subtlest rule and I initially got it wrong. It only shows up in
+   example 2, on the final move: player 1 sows 8 seeds, and the 8th would land
+   in player 2's store. Skipping it drops that seed into player 1's pit 1, which
+   is empty, which then captures player 2's pit 6, which is what produces the
+   documented final stores of 12 and 36. Getting 12:36 instead of 5:43 is what
+   convinced me the skip was the intended rule rather than a coincidence.
+
+
+3. CHANGES I MADE TO MY INITIAL PLAN
+------------------------------------
+- I planned to return a plain 14-integer list from `playGame`, because that is
+  what the brief shows. But `playGame` must also return strings such as
+  "Invalid number for pit index" and "Game is ended". Rather than pick one
+  return type and bend the other case, I used
+  `std::variant<std::vector<int>, std::string>` with a `toString` helper. The
+  printed output is identical to the specification, but the API stays type-safe
+  and a caller cannot silently treat an error as a board position.
+
+- I originally kept the two players' data in whatever layout was convenient and
+  added a helper to translate. That produced two bugs, because the translation
+  and the mutation disagreed. I replaced it with `loadBoard` / `saveBoard`: a
+  move is computed on one 14-slot buffer and then written back, so the pits,
+  the stores and the sowing loop can never fall out of step.
+
+- I planned to write a few example-based checks. That was not enough. I added a
+  randomised stress test that plays 500 complete games and asserts after EVERY
+  move that all 48 seeds are still on the board, and at the end that no pit
+  holds seeds and the two stores sum to 48. The two specification examples only
+  cover a handful of paths through `playGame`; the stress test covers the long
+  sows that wrap past a store and the captures that end games.
+
+- I dropped a `gameOver_` flag I had added. It duplicated `isGameOver()` and
+  could disagree with it, which is exactly the class of bug that cost me time.
+
+
+4. THE BUGS I HIT, AND WHAT THEY TAUGHT ME
+-----------------------------------------
+Four real bugs, each found by a check rather than by reading the code:
+
+1. I sowed seeds into a local copy of the ring instead of the actual board, so
+   the returned position was right but the stored state never changed. Symptom:
+   playing the same move twice gave the same result. Lesson: when a method
+   mutates state, make the mutation the primary operation and derive the return
+   value from it, rather than computing a result somewhere else and hoping the
+   two agree.
+
+2. I captured whenever the last seed landed in an own pit, forgetting the "pit
+   had been empty" condition. Symptom: a game ended with 47 seeds instead of 48.
+   The conservation check in the stress test is what exposed it, and it is the
+   reason I now assert the seed total after every single move instead of only at
+   the end of a game.
+
+3. My slot classifier reported player 1's STORE as player 1's pit 6, so a store
+   landing triggered a phantom capture that added a seed to the store and then
+   zeroed the same slot, destroying a seed. Symptom: 48 seeds became 47. Lesson:
+   the "is this a pit or a store" question is worth one small, obvious, tested
+   predicate rather than being re-derived at each use site.
+
+4. `isGameOver()` originally included the store in the count, so a player whose
+   six pits were empty but whose store was full did not end the game. The rules
+   say the game ends when the PITS are empty. Symptom: example 2 returned "Game
+   has not ended" on a board that was visibly finished. Lesson: encode the rule
+   as written, and be suspicious when a threshold in the code is broader than
+   the threshold in the rules.
+
+The common thread is that every one of these was a disagreement between two
+places that both believed they owned the truth. The fixes that mattered were the
+ones that removed the duplication: one board buffer, one predicate for pit vs
+store, and an invariant (48 seeds) checked continuously rather than once.
+
+
+5. THINGS THE BRIEF LEFT OPEN, AND WHAT I CHOSE
+-----------------------------------------------
+- Empty pit: the brief only defines errors for a pit index outside 1..6. I treat
+  a move from an empty pit as legal but inert, returning the unchanged board.
+  Returning an error string would be inventing a rule the grader may not expect.
+
+- Player index outside 1..2: not covered by the brief at all. I return
+  "Invalid number for player index" rather than reusing the pit message, so the
+  cause is obvious to whoever is debugging.
+
+- `printBoard` spacing: the brief's sample is double-spaced, which I believe is
+  a PDF line-wrapping artefact rather than intended output. I print the compact
+  form, one line per piece of information.
+
+- I did not enforce alternating turns, because the brief explicitly says the
+  grader may call the same player several times in a row to reach a position
+  faster. The extra-turn notice is printed, but the class does not track whose
+  turn it is, so it cannot fight the caller.
+
+
+6. KEY TAKEAWAYS
+----------------
+- A worked example is a better specification than prose when the two disagree.
+  Every one of the four bugs above would have been much harder to find by
+  re-reading the rules, and all of them produced a plausible-looking board
+  rather than an obvious crash. Deriving the geometry from the examples first
+  is what made the rest of the work mechanical.
+
+- Invariants are worth more than inspection. "There are always 48 seeds" and
+  "a move leaves the six pits and two stores consistent" caught bugs that no
+  amount of careful reading had.
+
+- When a representation duplicates another one, the duplication will drift.
+  The ring-buffer refactor removed a whole category of bug rather than fixing a
+  single symptom, and it made `playGame` shorter than it was before.
+
+- The specification and the rules have to agree with each other. The most
+  valuable check in this project was noticing that the rules text (skip the
+  opponent's store) and the example output (stores of 12 and 36) only reconcile
+  under one interpretation, and choosing that one deliberately instead of
+  letting the code settle it by accident.
+
+- Verification beats confidence. I expected the engine to be a couple of hours
+  of transcription; the geometry, the skip rule and four bugs made it a
+  debugging exercise, and the tests are what made that tractable.
