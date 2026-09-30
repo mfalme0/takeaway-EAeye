@@ -85,10 +85,6 @@ int Ayoayo::pitIndexOfSlot(int slot) {
     return slot <= STORE1_SLOT ? slot + 1 : slot - P2_PIT1_SLOT + 1;
 }
 
-int Ayoayo::opponentSlotOfPit(int playerIndex, int pitIndex) {
-    return ringSlot(playerIndex, pitIndex);
-}
-
 bool Ayoayo::isOwnPit(int slot, int playerIndex) {
     if (slot == STORE1_SLOT || slot == STORE2_SLOT) {
         return false;
@@ -241,7 +237,7 @@ PlayResult Ayoayo::playGame(int playerIndex, int pitIndex) {
         // opposite to it, together with the seed we just dropped.
         if (wasEmptyOwnPit) {
             const int landedPit = pitIndexOfSlot(lastSlot);
-            const int oppositeSlot = opponentSlotOfPit(3 - playerIndex, oppositePit(landedPit));
+            const int oppositeSlot = ringSlot(3 - playerIndex, oppositePit(landedPit));
             if (board[oppositeSlot] > 0) {
                 board[ownStoreSlot] += board[oppositeSlot] + 1;
                 board[oppositeSlot] = 0;

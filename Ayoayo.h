@@ -115,10 +115,11 @@ private:
 
     /** Ring slot of a player's own pit 1..6, i.e. seat 1 -> 0..5, seat 2 -> 7..12. */
     static int ringSlot(int playerIndex, int pitIndex);
-    /** Pit number 1..6 held by a ring slot, or 0 if the slot is a store. */
+    /**
+     * Pit number 1..6 held by a ring slot. Only meaningful for pit slots, i.e.
+     * slots 0..5 and 7..12; callers must rule out the two store slots first.
+     */
     static int pitIndexOfSlot(int slot);
-    /** Ring slot of the given player's pit number, i.e. the mirror of ringSlot for the other seat. */
-    static int opponentSlotOfPit(int playerIndex, int pitIndex);
     /** Whether a ring slot is a pit (not a store) belonging to playerIndex. */
     static bool isOwnPit(int slot, int playerIndex);
     /** Pit number 1..6 opposite to the given one on the other side: 7 - pit. */
